@@ -1,0 +1,37 @@
+import dlt
+
+from continuous_data_flow.sdk.authenticators import BearerTokenAuthenticator
+from continuous_data_flow.sdk.paginators import JSONPathPaginator
+from continuous_data_flow.sdk.rest import RestAPIEndpoint, RestAPIEndpointFactory
+
+
+class QualifiedEndpoint(RestAPIEndpoint[str]):
+    def get_request_params(self, next_page_token):
+        params = {"limit": 1000}
+        if next_page_token:
+            params["starting_after"] = next_page_token
+        return params
+
+
+class QualifiedAPI(
+    RestAPIEndpointFactory[QualifiedEndpoint, JSONPathPaginator, BearerTokenAuthenticator]
+):
+    base_url = "https://api.qualified.com/v1/"
+    endpoint_klass = QualifiedEndpoint
+    default_paginator = JSONPathPaginator(jsonpath="$.meta.end_cursor")
+    records_jsonpath = "$.data[*]"
+
+
+@dlt.source
+def qualified(api_token: str = dlt.secrets.value):
+    """Qualified source for DLT"""
+    api = QualifiedAPI(authenticator=BearerTokenAuthenticator(token=api_token))
+    return (
+        dlt.resource(
+            iter(api.endpoint_factory(endpoint)),
+            name=endpoint,
+            write_disposition="replace",
+            primary_key="id",
+        )
+        for endpoint in ("rep_conversations", "bot_conversations")
+    )
